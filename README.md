@@ -22,15 +22,15 @@
 
 | Windows Release                                                                                                    | MD5                               | SHA1                                     |
 |--------------------------------------------------------------------------------------------------------------------|-----------------------------------|------------------------------------------|
-| [wsusscn2cli v0.1.4](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.1.4/wsusscn2cli-v0.1.4.zip) |   |  |
+| [wsusscn2cli v0.1.4](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.1.4/wsusscn2cli-v0.1.4.zip) | 0117ece9a5f3e7b12fa7b65863586e5d  | 998342787b71d09be9ab8eb1c8bd05b87893dd40 |
 
 * On Windows, run `certutil -hashfile wsusscn2cli-v0.1.4.zip MD5` OR `certutil -hashfile wsusscn2cli-v0.1.4.zip SHA1` to calculate hash of file
 
-| Linux Release                                                                                                      | MD5                               | SHA1                                     |
-|--------------------------------------------------------------------------------------------------------------------|-----------------------------------|------------------------------------------|
-| [wsusscn2cli v0.1.4](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.1.4/wsusscn2cli-v0.1.4.zip) |   |  |
+| Linux Release                                                                                                         | MD5                               | SHA1                                     |
+|-----------------------------------------------------------------------------------------------------------------------|-----------------------------------|------------------------------------------|
+| [wsusscn2cli v0.1.4](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.1.4/wsusscn2cli-v0.1.4.tar.gz) | 88346e893b086443c0578e15fbeac2ab  | 31016ccf8c872a24a8ff25bc37ae54e1a55e137e |
 
-* On Linux, run `md5 wsusscn2cli`, `md5sum wsusscn2cli`, or `sha1sum wsusscn2cli` to calculate hash of file
+* On Linux, run `md5 wsusscn2cli-v0.1.4.tar.gz`, `md5sum wsusscn2cli-v0.1.4.tar.gz`, or `sha1sum wsusscn2cli-v0.1.4.tar.gz` to calculate hash of file
 
 ## Getting Started
 
