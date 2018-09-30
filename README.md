@@ -22,19 +22,19 @@
 
 | Windows Release                                                                                                    | MD5                               | SHA1                                     |
 |--------------------------------------------------------------------------------------------------------------------|-----------------------------------|------------------------------------------|
-| [wsusscn2cli v0.1.4](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.1.4/wsusscn2cli-v0.1.4.zip) | 0117ece9a5f3e7b12fa7b65863586e5d  | 998342787b71d09be9ab8eb1c8bd05b87893dd40 |
+| [wsusscn2cli v0.2.0](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.2.0/wsusscn2cli-v0.2.0.zip) |   |  |
 
-* On Windows, run `certutil -hashfile wsusscn2cli-v0.1.4.zip MD5` OR `certutil -hashfile wsusscn2cli-v0.1.4.zip SHA1` to calculate hash of file
+* On Windows, run `certutil -hashfile wsusscn2cli-v0.2.0.zip MD5` OR `certutil -hashfile wsusscn2cli-v0.2.0.zip SHA1` to calculate hash of file
 
 | Linux Release                                                                                                         | MD5                               | SHA1                                     |
 |-----------------------------------------------------------------------------------------------------------------------|-----------------------------------|------------------------------------------|
-| [wsusscn2cli v0.1.4](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.1.4/wsusscn2cli-v0.1.4.tar.gz) | 88346e893b086443c0578e15fbeac2ab  | 31016ccf8c872a24a8ff25bc37ae54e1a55e137e |
+| [wsusscn2cli v0.2.0](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.1.4/wsusscn2cli-v0.2.0.tar.gz) |  |  |
 
-* On Linux, run `md5 wsusscn2cli-v0.1.4.tar.gz`, `md5sum wsusscn2cli-v0.1.4.tar.gz`, or `sha1sum wsusscn2cli-v0.1.4.tar.gz` to calculate hash of file
+* On Linux, run `md5 wsusscn2cli-v0.2.0.tar.gz`, `md5sum wsusscn2cli-v0.2.0.tar.gz`, or `sha1sum wsusscn2cli-v0.2.0.tar.gz` to calculate hash of file
 
 ## Getting Started
 
-1. Set API key (email hashauthority at outlook.com to request an API key).
+1. Set API key (Visit https://wsusscn2.cab to create an account and generate an API key).
 2. Run `wsusscn2cli setapikey --api_key YOURAPIKEY` to write the API key to wsusscn2cli.json
 3. Run `wsusscn2cli listupdates --record_limit 50` and confirm output
 
@@ -53,7 +53,7 @@ USAGE:
    wsusscn2cli [global options] command [command options] [arguments...]
 
 VERSION:
-   0.1.4
+   0.2.0
 
 COMMANDS:
      listclassification  List all classifications
@@ -287,6 +287,8 @@ Example:
 * **0.1.2** (2018-04-12) - Internal release only.
 * **0.1.3** (2018-04-25) - Internal release only.
 * **0.1.4** (2018-06-11) - Initial public release. Release of wsusscn2cli binary with listupdate, listclassification, listproduct, and listproductfamily commands
+* **0.1.5** (unreleased) - Internal release only. Fixed bug when using --update_creation_date_after option
+* **0.2.0** (2018-09-30) - Updated endpoint to api.wsusscn2.cab. Note that all previous versions will no longer work since the root domain is now a web page.
 
 ## License
 

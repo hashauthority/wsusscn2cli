@@ -9,13 +9,17 @@
 // 0.1.2: Added update boolean parameters
 // 0.1.3: Added columns, limit, and offset
 // 0.1.4: Added update_creation_date filters
+// 0.1.5: Added listsupersede
+// 0.2.0: Use new API endpoint
 /**************************************************************************************************/
 package main
 
 import (
+	//"crypto/tls"
 	"encoding/json"     //api
 	"errors"            //new error
 	"fmt"               //printing
+	"io"                //multiwriter for logging
 	"io/ioutil"         //writing to file
 	"log"               //logging
 	"net/http"          //http client
@@ -54,6 +58,7 @@ type Update struct {
 	IsSuperseded        string `json:"is_superseded"`
 	Kb                  string `json:"kb"`
 	Language            string `json:"language"`
+	Arch                string `json:"arch"`
 	MoreInfoUrl         string `json:"more_info_url"`
 	MsrcSeverity        string `json:"msrc_severity"`
 	ProductFamilyTitle  string `json:"product_family_title"`
@@ -92,6 +97,21 @@ type ProductFamily struct {
 	ProductFamilyTitle    string `json:"product_family_title"`
 }
 
+//UpdateSupersede: Structure for superseded update records
+type UpdateSupersede struct {
+	UpdateUid          string `json:"update_uid"`
+	UpdateTitle        string `json:"update_title"`
+	UpdateCreationDate string `json:"update_creation_date"`
+	ProductTitle       string `json:"product_title"`
+	IsSuperseded       string `json:"is_superseded"`
+	SuperUpdateUid     string `json:"super_uid"`
+	SuperTitle         string `json:"super_title"`
+	SuperCreationDate  string `json:"super_creation_date"`
+	SuperProductTitle  string `json:"super_product_title"`
+	SuperIsSuperseded  string `json:"super_is_superseded"`
+}
+
+// wConfig: wsusscn2cli config file
 type wConfig struct {
 	ApiServer string `json:"api_server"`
 	ApiPort   string `json:"api_port"`
@@ -162,6 +182,7 @@ func getJson(c *http.Client, req *http.Request, debug bool, target interface{}) 
 		fmt.Println(string(requestDump))
 	}
 
+	//http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	r, err := c.Do(req)
 
 	if err != nil {
@@ -178,6 +199,12 @@ func getJson(c *http.Client, req *http.Request, debug bool, target interface{}) 
 
 	if r.StatusCode == http.StatusUnauthorized {
 		return errors.New("Unauthorized request to service")
+	} else if r.StatusCode == http.StatusForbidden {
+		return errors.New("Forbidden request to service")
+	} else if r.StatusCode == http.StatusNotFound {
+		return errors.New("Resource not found (404) received from service")
+	} else if r.StatusCode != 200 {
+		return errors.New(fmt.Sprintf("Unknown HTTP error (%d) received from service", r.StatusCode))
 	}
 
 	defer r.Body.Close()
@@ -213,6 +240,7 @@ func main() {
 	var apiUrl string //url to wsusscn2 api
 	//var execPath string //path to the go executable
 	var debug bool     //debug logging
+	var quiet bool     //do not log to screen
 	var countOnly bool //only print number of records returned
 
 	var productTitle []string
@@ -223,6 +251,7 @@ func main() {
 	var productFamilyTitle []string
 	var classificationTitle []string
 	var msrcSeverity []string
+	var arch []string
 	var columns string
 
 	var limit int
@@ -233,7 +262,7 @@ func main() {
 	defaultOffset := 0
 	defaultRecordLimit := 20000
 
-	var defaultUpdateColumns = "update_uid, kb, update_title, update_creation_date, product_title, product_family_title, update_type, is_superseded, classification_title, company_title, description, install_behavior, is_beta, is_bundled, is_public, language, more_info_url, msrc_severity, publication_state, readiness, support_url, uninstall_behavior, uninstall_notes, update_revision"
+	var defaultUpdateColumns = "update_uid, kb, update_title, update_creation_date, product_title, product_family_title, update_type, is_superseded, classification_title, company_title, description, install_behavior, is_beta, is_bundled, is_public, language, more_info_url, msrc_severity, publication_state, readiness, support_url, uninstall_behavior, uninstall_notes, update_revision, arch"
 	var defaultUpdateColumnsTitle = make(map[string]string)
 
 	for _, v := range strings.Split(defaultUpdateColumns, ",") {
@@ -255,7 +284,7 @@ func main() {
 	var updateCreationDateBefore string
 	var updateCreationDateOn string
 
-	apiUrl = "https://wsusscn2.cab:443"
+	apiUrl = "https://api.wsusscn2.cab:443"
 
 	api := &http.Client{Timeout: 30 * time.Second}
 
@@ -266,9 +295,19 @@ func main() {
 
 	config := readConfig(execPath + "/wsusscn2cli.json")
 
+	if config.ApiPort != "" {
+		apiUrl = strings.Replace(apiUrl, "443", config.ApiPort, -1)
+	}
+
+	if config.ApiServer != "" {
+		apiUrl = strings.Replace(apiUrl, "api.wsusscn2.cab", config.ApiServer, -1)
+	}
+
+	logFile, err := os.OpenFile("wsusscn2cli.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+
 	app := cli.NewApp()
 	app.Name = "wsusscn2cli"
-	app.Version = "0.1.4"
+	app.Version = "0.2.0"
 	app.Usage = "wsusscn2.cab integration"
 	app.Copyright = "(c) 2018 Hash Authority, LLC"
 	app.Commands = []cli.Command{
@@ -276,18 +315,30 @@ func main() {
 			Name:  "listclassification",
 			Usage: "List all classifications",
 			Flags: []cli.Flag{
-				cli.BoolFlag{
-					Name:        "debug, d",
-					Usage:       "Output debug level logging",
-					Destination: &debug,
-				},
 				cli.StringFlag{
 					Name:        "api_key, a",
 					Usage:       "API key (required if not using config file)",
 					Destination: &apiKey,
 				},
+				cli.BoolFlag{
+					Name:        "debug, d",
+					Usage:       "Output debug level logging",
+					Destination: &debug,
+				},
+				cli.BoolFlag{
+					Name:        "quiet, q",
+					Usage:       "Do not log to screen",
+					Destination: &quiet,
+				},
 			},
 			Action: func(c *cli.Context) error {
+				if quiet {
+					log.SetOutput(logFile)
+				} else {
+					mw := io.MultiWriter(os.Stdout, logFile)
+					log.SetOutput(mw)
+				}
+
 				log.Println("List classification called")
 
 				//Authentication setup
@@ -327,8 +378,20 @@ func main() {
 					Usage:       "API key (required if not using config file)",
 					Destination: &apiKey,
 				},
+				cli.BoolFlag{
+					Name:        "quiet, q",
+					Usage:       "Do not log to screen",
+					Destination: &quiet,
+				},
 			},
 			Action: func(c *cli.Context) error {
+				if quiet {
+					log.SetOutput(logFile)
+				} else {
+					mw := io.MultiWriter(os.Stdout, logFile)
+					log.SetOutput(mw)
+				}
+
 				log.Println("List product called")
 
 				//Authentication setup
@@ -368,8 +431,20 @@ func main() {
 					Usage:       "API key (required if not using config file)",
 					Destination: &apiKey,
 				},
+				cli.BoolFlag{
+					Name:        "quiet, q",
+					Usage:       "Do not log to screen",
+					Destination: &quiet,
+				},
 			},
 			Action: func(c *cli.Context) error {
+				if quiet {
+					log.SetOutput(logFile)
+				} else {
+					mw := io.MultiWriter(os.Stdout, logFile)
+					log.SetOutput(mw)
+				}
+
 				log.Println("List productfamily called")
 
 				//Authentication setup
@@ -399,20 +474,410 @@ func main() {
 			Name:  "listupdate",
 			Usage: "List updates",
 			Flags: []cli.Flag{
-				cli.BoolFlag{
-					Name:        "debug, d",
-					Usage:       "Output debug level logging",
-					Destination: &debug,
-				},
 				cli.StringFlag{
 					Name:        "api_key, a",
 					Usage:       "API key (required if not using config file)",
 					Destination: &apiKey,
 				},
 				cli.BoolFlag{
+					Name:        "debug, d",
+					Usage:       "Output debug level logging",
+					Destination: &debug,
+				},
+				cli.BoolFlag{
+					Name:        "quiet, q",
+					Usage:       "Do not log to screen",
+					Destination: &quiet,
+				},
+				cli.BoolFlag{
 					Name:        "count_only",
 					Usage:       "Only print number of records",
 					Destination: &countOnly,
+				},
+				cli.StringSliceFlag{
+					Name:  "product_title",
+					Usage: "Name of product.",
+				},
+				cli.StringSliceFlag{
+					Name:  "update_uid",
+					Usage: "Update Uid.",
+				},
+				cli.StringSliceFlag{
+					Name:  "update_title",
+					Usage: "Update Title.",
+				},
+				cli.StringSliceFlag{
+					Name:  "kb",
+					Usage: "Update KB.",
+				},
+				cli.StringSliceFlag{
+					Name:  "update_type",
+					Usage: "Update Type.",
+				},
+				cli.StringSliceFlag{
+					Name:  "product_family_title",
+					Usage: "Product Family Title.",
+				},
+				cli.StringSliceFlag{
+					Name:  "classification_title",
+					Usage: "Classification Title.",
+				},
+				cli.StringSliceFlag{
+					Name:  "msrc_severity",
+					Usage: "MSRC Severity.",
+				},
+				cli.StringSliceFlag{
+					Name:  "arch",
+					Usage: "Architecture.",
+				},
+				cli.StringFlag{
+					Name:        "is_superseded",
+					Usage:       "Is Superseded.",
+					Destination: &isSuperseded,
+				},
+				cli.StringFlag{
+					Name:        "is_bundled",
+					Usage:       "Is Bundled.",
+					Destination: &isBundled,
+				},
+				cli.StringFlag{
+					Name:        "is_public",
+					Usage:       "Is Public.",
+					Destination: &isPublic,
+				},
+				cli.StringFlag{
+					Name:        "is_beta",
+					Usage:       "Is Beta.",
+					Destination: &isBeta,
+				},
+				cli.StringFlag{
+					Name:        "update_creation_date_after",
+					Usage:       "Updates created after this date [YYYY-MM-DD] (exclusive).",
+					Destination: &updateCreationDateAfter,
+				},
+				cli.StringFlag{
+					Name:        "update_creation_date_before",
+					Usage:       "Updates created before this date [YYYY-MM-DD] (exclusive).",
+					Destination: &updateCreationDateBefore,
+				},
+				cli.StringFlag{
+					Name:        "update_creation_date_on",
+					Usage:       "Updates created on this date [YYYY-MM-DD].",
+					Destination: &updateCreationDateOn,
+				},
+				cli.StringFlag{
+					Name:        "columns",
+					Usage:       "Restrict output to listed columns.",
+					Destination: &columns,
+				},
+				cli.IntFlag{
+					Name:        "limit",
+					Usage:       "Number of records per page.",
+					Value:       defaultLimit,
+					Destination: &limit,
+				},
+				cli.IntFlag{
+					Name:        "offset",
+					Usage:       "Number of records to skip.",
+					Value:       defaultOffset,
+					Destination: &offset,
+				},
+				cli.IntFlag{
+					Name:        "record_limit",
+					Usage:       "Max number of records to return.",
+					Value:       defaultRecordLimit,
+					Destination: &recordLimit,
+				},
+			},
+			Action: func(c *cli.Context) error {
+				if quiet {
+					log.SetOutput(logFile)
+				} else {
+					mw := io.MultiWriter(os.Stdout, logFile)
+					log.SetOutput(mw)
+				}
+
+				log.Println("List update called")
+
+				//Authentication setup
+				if apiKey == "" && config.ApiKey == "" {
+					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey ASDF")
+				}
+
+				if apiKey == "" {
+					apiKey = config.ApiKey
+				}
+
+				productTitle = c.StringSlice("product_title")
+				updateUid = c.StringSlice("update_uid")
+				updateTitle = c.StringSlice("update_title")
+				updateKb = c.StringSlice("kb")
+				updateType = c.StringSlice("update_type")
+				productFamilyTitle = c.StringSlice("product_family_title")
+				classificationTitle = c.StringSlice("classification_title")
+				msrcSeverity = c.StringSlice("msrc_severity")
+				arch = c.StringSlice("arch")
+
+				if columns == "" {
+					columns = defaultUpdateColumns
+				}
+
+				columnFilter := strToSlice(columns)
+
+				recordCnt := 0
+				done := false
+
+				if limit <= 0 {
+					limit = defaultLimit
+				}
+
+				if offset <= 0 {
+					offset = defaultOffset
+				}
+
+				if recordLimit <= 0 {
+					recordLimit = defaultRecordLimit
+				}
+
+				if recordLimit < limit {
+					limit = recordLimit
+				}
+
+				for recordCnt < recordLimit && !done {
+					var update []Update
+
+					req := createNewHttpReq(apiUrl+"/update", apiKey)
+
+					q := req.URL.Query()
+					q.Add("limit", strconv.Itoa(limit))
+					q.Add("offset", strconv.Itoa(offset))
+
+					if len(productTitle) > 0 {
+						for _, p := range productTitle {
+							q.Add("product_title", p)
+						}
+					}
+					if len(updateUid) > 0 {
+						for _, p := range updateUid {
+							q.Add("uid", p)
+						}
+					}
+					if len(updateTitle) > 0 {
+						for _, p := range updateTitle {
+							q.Add("title", p)
+						}
+					}
+					if len(updateKb) > 0 {
+						for _, p := range updateKb {
+							q.Add("kb", p)
+						}
+					}
+					if len(updateType) > 0 {
+						for _, p := range updateType {
+							q.Add("type", p)
+						}
+					}
+					if len(productFamilyTitle) > 0 {
+						for _, p := range productFamilyTitle {
+							q.Add("product_family_title", p)
+						}
+					}
+					if len(classificationTitle) > 0 {
+						for _, p := range classificationTitle {
+							q.Add("classification_title", p)
+						}
+					}
+					if len(msrcSeverity) > 0 {
+						for _, p := range msrcSeverity {
+							q.Add("msrc_severity", p)
+						}
+					}
+					if len(arch) > 0 {
+						for _, p := range arch {
+							q.Add("arch", p)
+						}
+					}
+
+					if isSuperseded != "" {
+						q.Add("is_superseded", isSuperseded)
+					}
+
+					if isBundled != "" {
+						q.Add("is_bundled", isBundled)
+					}
+
+					if isPublic != "" {
+						q.Add("is_public", isPublic)
+					}
+
+					if isBeta != "" {
+						q.Add("is_beta", isBeta)
+					}
+
+					layout := "2006-01-02"
+					if updateCreationDateAfter != "" {
+						_, err := time.Parse(layout, updateCreationDateAfter)
+						if err != nil {
+							log.Fatal(err)
+							log.Println("Unable to parse provided date. Expected: YYYY-MM-DD. Found %s", updateCreationDateAfter)
+							return nil
+						}
+						q.Add("update_creation_date_after", updateCreationDateAfter)
+					}
+
+					if updateCreationDateBefore != "" {
+						_, err := time.Parse(layout, updateCreationDateBefore)
+						if err != nil {
+							log.Fatal(err)
+							log.Println("Unable to parse provided date. Expected: YYYY-MM-DD. Found %s", updateCreationDateBefore)
+							return nil
+						}
+						q.Add("update_creation_date_before", updateCreationDateBefore)
+					}
+
+					if updateCreationDateOn != "" {
+						if strings.ToLower(updateCreationDateOn) != "today" {
+							_, err := time.Parse(layout, updateCreationDateOn)
+							if err != nil {
+								log.Fatal(err)
+								log.Println("Unable to parse provided date. Expected: YYYY-MM-DD. Found %s", updateCreationDateOn)
+								return nil
+							}
+						}
+						q.Add("update_creation_date_on", updateCreationDateOn)
+					}
+
+					req.URL.RawQuery = q.Encode()
+
+					err := getJson(api, req, debug, &update)
+					check(err)
+
+					curRecordCnt := len(update)
+
+					if countOnly {
+						//do nothing here
+					} else {
+						firstCol := true
+						for _, c := range columnFilter {
+							if val, ok := defaultUpdateColumnsTitle[c]; ok {
+								if firstCol {
+									firstCol = false
+								} else {
+									fmt.Printf(",")
+								}
+								fmt.Printf("\"%s\"", val)
+							}
+						}
+						fmt.Printf("\n")
+
+						for _, v := range update {
+							firstCol = true
+							for _, c := range columnFilter {
+								if firstCol {
+									firstCol = false
+								} else {
+									fmt.Printf(",")
+								}
+
+								switch c {
+								case "arch":
+									fmt.Printf("\"%s\"", v.Arch)
+								case "classification_title":
+									fmt.Printf("\"%s\"", v.ClassificationTitle)
+								case "company_title":
+									fmt.Printf("\"%s\"", v.CompanyTitle)
+								case "description":
+									fmt.Printf("\"%s\"", v.Description)
+								case "install_behavior":
+									fmt.Printf("\"%s\"", v.InstallBehavior)
+								case "is_beta":
+									fmt.Printf("\"%s\"", v.IsBeta)
+								case "is_bundled":
+									fmt.Printf("\"%s\"", v.IsBundled)
+								case "is_public":
+									fmt.Printf("\"%s\"", v.IsPublic)
+								case "is_superseded":
+									fmt.Printf("\"%s\"", v.IsSuperseded)
+								case "kb":
+									fmt.Printf("\"%s\"", v.Kb)
+								case "language":
+									fmt.Printf("\"%s\"", v.Language)
+								case "more_info_url":
+									fmt.Printf("\"%s\"", v.MoreInfoUrl)
+								case "msrc_severity":
+									fmt.Printf("\"%s\"", v.MsrcSeverity)
+								case "product_family_title":
+									fmt.Printf("\"%s\"", v.ProductFamilyTitle)
+								case "product_title":
+									fmt.Printf("\"%s\"", v.ProductTitle)
+								case "publication_state":
+									fmt.Printf("\"%s\"", v.PublicationState)
+								case "readiness":
+									fmt.Printf("\"%s\"", v.Readiness)
+								case "support_url":
+									fmt.Printf("\"%s\"", v.SupportUrl)
+								case "uninstall_behavior":
+									fmt.Printf("\"%s\"", v.UninstallBehavior)
+								case "uninstall_notes":
+									fmt.Printf("\"%s\"", v.UninstallNotes)
+								case "update_creation_date":
+									fmt.Printf("\"%s\"", v.UpdateCreationDate)
+								case "update_revision":
+									fmt.Printf("\"%s\"", v.UpdateRevision)
+								case "update_title":
+									fmt.Printf("\"%s\"", v.UpdateTitle)
+								case "update_type":
+									fmt.Printf("\"%s\"", v.UpdateType)
+								case "update_uid":
+									fmt.Printf("\"%s\"", v.UpdateUid)
+								}
+							}
+							fmt.Printf("\n")
+						}
+					}
+
+					recordCnt += curRecordCnt
+					offset += curRecordCnt
+
+					if curRecordCnt == 0 {
+						if debug {
+							log.Println("No more records returned")
+						}
+						done = true
+					}
+					if curRecordCnt < limit {
+						if debug {
+							log.Println("Last page of records reached")
+						}
+						done = true
+					}
+				}
+
+				if countOnly {
+					fmt.Printf("Number of records: %d\n", recordCnt)
+				}
+
+				return nil
+			},
+		},
+		{
+			Name:  "listsupersede",
+			Usage: "List supersession updates",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:        "api_key, a",
+					Usage:       "API key (required if not using config file)",
+					Destination: &apiKey,
+				},
+				cli.BoolFlag{
+					Name:        "debug, d",
+					Usage:       "Output debug level logging",
+					Destination: &debug,
+				},
+				cli.BoolFlag{
+					Name:        "quiet, q",
+					Usage:       "Do not log to screen",
+					Destination: &quiet,
 				},
 				cli.StringSliceFlag{
 					Name:  "product_title",
@@ -481,11 +946,6 @@ func main() {
 					Usage:       "Updates created on this date [YYYY-MM-DD].",
 					Destination: &updateCreationDateOn,
 				},
-				cli.StringFlag{
-					Name:        "columns",
-					Usage:       "Restrict output to listed columns.",
-					Destination: &columns,
-				},
 				cli.IntFlag{
 					Name:        "limit",
 					Usage:       "Number of records per page.",
@@ -506,7 +966,14 @@ func main() {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				log.Println("List update called")
+				if quiet {
+					log.SetOutput(logFile)
+				} else {
+					mw := io.MultiWriter(os.Stdout, logFile)
+					log.SetOutput(mw)
+				}
+
+				log.Println("List supersede called")
 
 				//Authentication setup
 				if apiKey == "" && config.ApiKey == "" {
@@ -525,12 +992,6 @@ func main() {
 				productFamilyTitle = c.StringSlice("product_family_title")
 				classificationTitle = c.StringSlice("classification_title")
 				msrcSeverity = c.StringSlice("msrc_severity")
-
-				if columns == "" {
-					columns = defaultUpdateColumns
-				}
-
-				columnFilter := strToSlice(columns)
 
 				recordCnt := 0
 				done := false
@@ -552,9 +1013,9 @@ func main() {
 				}
 
 				for recordCnt < recordLimit && !done {
-					var update []Update
+					var update []UpdateSupersede
 
-					req := createNewHttpReq(apiUrl+"/update", apiKey)
+					req := createNewHttpReq(apiUrl+"/supersede", apiKey)
 
 					q := req.URL.Query()
 					q.Add("limit", strconv.Itoa(limit))
@@ -640,7 +1101,7 @@ func main() {
 
 					if updateCreationDateOn != "" {
 						if strings.ToLower(updateCreationDateOn) != "today" {
-							_, err := time.Parse(layout, updateCreationDateBefore)
+							_, err := time.Parse(layout, updateCreationDateOn)
 							if err != nil {
 								log.Fatal(err)
 								log.Println("Unable to parse provided date. Expected: YYYY-MM-DD. Found %s", updateCreationDateOn)
@@ -657,101 +1118,27 @@ func main() {
 
 					curRecordCnt := len(update)
 
-					if countOnly {
-						//do nothing here
-					} else {
-						firstCol := true
-						for _, c := range columnFilter {
-							if val, ok := defaultUpdateColumnsTitle[c]; ok {
-								if firstCol {
-									firstCol = false
-								} else {
-									fmt.Printf(",")
-								}
-								fmt.Printf("\"%s\"", val)
-							}
-						}
-						fmt.Printf("\n")
+					fmt.Println(`"UpdateUid","UpdateTitle","UpdateCreationDate","ProductTitle","IsSuperseded","SuperUpdateUid","SuperTitle","SuperCreationDate","SuperProductTitle","SuperIsSuperseded"`)
 
-						for _, v := range update {
-							firstCol = true
-							for _, c := range columnFilter {
-								if firstCol {
-									firstCol = false
-								} else {
-									fmt.Printf(",")
-								}
-
-								switch c {
-								case "classification_title":
-									fmt.Printf("\"%s\"", v.ClassificationTitle)
-								case "company_title":
-									fmt.Printf("\"%s\"", v.CompanyTitle)
-								case "description":
-									fmt.Printf("\"%s\"", v.Description)
-								case "install_behavior":
-									fmt.Printf("\"%s\"", v.InstallBehavior)
-								case "is_beta":
-									fmt.Printf("\"%s\"", v.IsBeta)
-								case "is_bundled":
-									fmt.Printf("\"%s\"", v.IsBundled)
-								case "is_public":
-									fmt.Printf("\"%s\"", v.IsPublic)
-								case "is_superseded":
-									fmt.Printf("\"%s\"", v.IsSuperseded)
-								case "kb":
-									fmt.Printf("\"%s\"", v.Kb)
-								case "language":
-									fmt.Printf("\"%s\"", v.Language)
-								case "more_info_url":
-									fmt.Printf("\"%s\"", v.MoreInfoUrl)
-								case "msrc_severity":
-									fmt.Printf("\"%s\"", v.MsrcSeverity)
-								case "product_family_title":
-									fmt.Printf("\"%s\"", v.ProductFamilyTitle)
-								case "product_title":
-									fmt.Printf("\"%s\"", v.ProductTitle)
-								case "publication_state":
-									fmt.Printf("\"%s\"", v.PublicationState)
-								case "readiness":
-									fmt.Printf("\"%s\"", v.Readiness)
-								case "support_url":
-									fmt.Printf("\"%s\"", v.SupportUrl)
-								case "uninstall_behavior":
-									fmt.Printf("\"%s\"", v.UninstallBehavior)
-								case "uninstall_notes":
-									fmt.Printf("\"%s\"", v.UninstallNotes)
-								case "update_creation_date":
-									fmt.Printf("\"%s\"", v.UpdateCreationDate)
-								case "update_revision":
-									fmt.Printf("\"%s\"", v.UpdateRevision)
-								case "update_title":
-									fmt.Printf("\"%s\"", v.UpdateTitle)
-								case "update_type":
-									fmt.Printf("\"%s\"", v.UpdateType)
-								case "update_uid":
-									fmt.Printf("\"%s\"", v.UpdateUid)
-								}
-							}
-							fmt.Printf("\n")
-						}
+					for _, v := range update {
+						fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", v.UpdateUid, v.UpdateTitle, v.UpdateCreationDate, v.ProductTitle, v.IsSuperseded, v.SuperUpdateUid, v.SuperTitle, v.SuperCreationDate, v.SuperProductTitle, v.SuperIsSuperseded)
 					}
 
 					recordCnt += curRecordCnt
 					offset += curRecordCnt
 
 					if curRecordCnt == 0 {
-						log.Println("No more records returned")
+						if debug {
+							log.Println("No more records returned")
+						}
 						done = true
 					}
 					if curRecordCnt < limit {
-						log.Println("Last page of records reached")
+						if debug {
+							log.Println("Last page of records reached")
+						}
 						done = true
 					}
-				}
-
-				if countOnly {
-					fmt.Printf("Number of records: %d\n", recordCnt)
 				}
 
 				return nil
