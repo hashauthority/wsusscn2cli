@@ -11,11 +11,12 @@
 // 0.1.4: Added update_creation_date filters
 // 0.1.5: Added listsupersede
 // 0.2.0: Use new API endpoint
+// 0.3.0: New /cve endpoint. Added "arch" and "is_in_file" column to /update. Added -k option.
 /**************************************************************************************************/
 package main
 
 import (
-	//"crypto/tls"
+	"crypto/tls"
 	"encoding/json"     //api
 	"errors"            //new error
 	"fmt"               //printing
@@ -111,6 +112,26 @@ type UpdateSupersede struct {
 	SuperIsSuperseded  string `json:"super_is_superseded"`
 }
 
+// Cve: Structure for cve records
+type Cve struct {
+	Cve                   string `json:"cve"`
+	CveTitle              string `json:"cve_title"`
+	UpdateUid             string `json:"update_uid"`
+	Cvssv3BaseScore       string `json:"cvssv3_base_score"`
+	Cvssv3TemporalScore   string `json:"cvssv3_temporal_score"`
+    Cvssv3Vector          string `json:"cvssv3_vector"`
+	UpdateTitle           string `json:"update_title"`
+	Kb                    string `json:"kb"`
+	ProductTitle          string `json:"product_title"`
+	ProductFamilyTitle    string `json:"product_family_title"`
+	ClassificationTitle   string `json:"classification_title"`
+	MsrcSeverity          string `json:"msrc_severity"`
+	Arch                  string `json:"arch"`
+	IsInFile              string `json:"is_in_file"`
+	IsSuperseded          string `json:"is_superseded"`
+	LatestSupersessionUid string `json:"latest_supersession_uid"`
+}
+
 // wConfig: wsusscn2cli config file
 type wConfig struct {
 	ApiServer string `json:"api_server"`
@@ -171,7 +192,7 @@ func createNewHttpReq(url string, key string) *http.Request {
 	return req
 }
 
-func getJson(c *http.Client, req *http.Request, debug bool, target interface{}) error {
+func getJson(c *http.Client, req *http.Request, debug bool, insecure bool, target interface{}) error {
 	log.Println("GET " + req.URL.String())
 
 	if debug {
@@ -182,7 +203,10 @@ func getJson(c *http.Client, req *http.Request, debug bool, target interface{}) 
 		fmt.Println(string(requestDump))
 	}
 
-	//http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	if insecure {
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+
 	r, err := c.Do(req)
 
 	if err != nil {
@@ -241,8 +265,10 @@ func main() {
 	//var execPath string //path to the go executable
 	var debug bool     //debug logging
 	var quiet bool     //do not log to screen
+	var insecure bool  //do not verify server's ssl cert
 	var countOnly bool //only print number of records returned
 
+	var cve []string
 	var productTitle []string
 	var updateUid []string
 	var updateTitle []string
@@ -275,10 +301,14 @@ func main() {
 		defaultUpdateColumnsTitle[c] = newTitle
 	}
 
-	var isSuperseded string
-	var isBundled string
+	var cvssv3BaseScore string
+	var cvssv3TemporalScore string
+
+	var isInFile string
 	var isBeta string
+	var isBundled string
 	var isPublic string
+	var isSuperseded string
 
 	var updateCreationDateAfter string
 	var updateCreationDateBefore string
@@ -307,7 +337,7 @@ func main() {
 
 	app := cli.NewApp()
 	app.Name = "wsusscn2cli"
-	app.Version = "0.2.0"
+	app.Version = "0.3.0"
 	app.Usage = "wsusscn2.cab integration"
 	app.Copyright = "(c) 2018 Hash Authority, LLC"
 	app.Commands = []cli.Command{
@@ -324,6 +354,11 @@ func main() {
 					Name:        "debug, d",
 					Usage:       "Output debug level logging",
 					Destination: &debug,
+				},
+				cli.BoolFlag{
+					Name:        "insecure, k",
+					Usage:       "Do not verify server's SSL cert",
+					Destination: &insecure,
 				},
 				cli.BoolFlag{
 					Name:        "quiet, q",
@@ -343,7 +378,7 @@ func main() {
 
 				//Authentication setup
 				if apiKey == "" && config.ApiKey == "" {
-					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey ASDF")
+					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey --api_key 1234")
 				}
 
 				if apiKey == "" {
@@ -354,7 +389,7 @@ func main() {
 
 				req := createNewHttpReq(apiUrl+"/classification", apiKey)
 
-				err := getJson(api, req, debug, &classification)
+				err := getJson(api, req, debug, insecure, &classification)
 				check(err)
 				fmt.Println(`"ClassificationUid","ClassificationRevision","ClassificationTitle"`)
 				for _, v := range classification {
@@ -379,6 +414,11 @@ func main() {
 					Destination: &apiKey,
 				},
 				cli.BoolFlag{
+					Name:        "insecure, k",
+					Usage:       "Do not verify server's SSL cert",
+					Destination: &insecure,
+				},
+				cli.BoolFlag{
 					Name:        "quiet, q",
 					Usage:       "Do not log to screen",
 					Destination: &quiet,
@@ -396,7 +436,7 @@ func main() {
 
 				//Authentication setup
 				if apiKey == "" && config.ApiKey == "" {
-					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey ASDF")
+					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey --api_key 1234")
 				}
 
 				if apiKey == "" {
@@ -407,7 +447,7 @@ func main() {
 
 				req := createNewHttpReq(apiUrl+"/product", apiKey)
 
-				err := getJson(api, req, debug, &product)
+				err := getJson(api, req, debug, insecure, &product)
 				check(err)
 				fmt.Println(`"ProductUid","ProductRevision","ProductTitle"`)
 				for _, v := range product {
@@ -432,6 +472,11 @@ func main() {
 					Destination: &apiKey,
 				},
 				cli.BoolFlag{
+					Name:        "insecure, k",
+					Usage:       "Do not verify server's SSL cert",
+					Destination: &insecure,
+				},
+				cli.BoolFlag{
 					Name:        "quiet, q",
 					Usage:       "Do not log to screen",
 					Destination: &quiet,
@@ -449,7 +494,7 @@ func main() {
 
 				//Authentication setup
 				if apiKey == "" && config.ApiKey == "" {
-					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey ASDF")
+					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey --api_key 1234")
 				}
 
 				if apiKey == "" {
@@ -460,13 +505,255 @@ func main() {
 
 				req := createNewHttpReq(apiUrl+"/productfamily", apiKey)
 
-				err := getJson(api, req, debug, &productfamily)
+				err := getJson(api, req, debug, insecure, &productfamily)
 				check(err)
 				fmt.Println(`"ProductFamilyUid","ProductFamilyRevision","ProductFamilyTitle"`)
 				for _, v := range productfamily {
 					fmt.Printf("\"%s\",\"%s\",\"%s\"\n", v.ProductFamilyUid, v.ProductFamilyRevision, v.ProductFamilyTitle)
 				}
 
+				return nil
+			},
+		},
+		{
+			Name:  "listcve",
+			Usage: "List all CVEs",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:        "api_key, a",
+					Usage:       "API key (required if not using config file)",
+					Destination: &apiKey,
+				},
+				cli.BoolFlag{
+					Name:        "debug, d",
+					Usage:       "Output debug level logging",
+					Destination: &debug,
+				},
+				cli.BoolFlag{
+					Name:        "insecure, k",
+					Usage:       "Do not verify server's SSL cert",
+					Destination: &insecure,
+				},
+				cli.BoolFlag{
+					Name:        "quiet, q",
+					Usage:       "Do not log to screen",
+					Destination: &quiet,
+				},
+				cli.StringSliceFlag{
+					Name:  "cve",
+					Usage: "CVE number (Ex., CVE-2018-0001).",
+				},
+				cli.StringFlag{
+					Name:  "cvssv3_base_score",
+					Usage: "CVSS v3 Base Score (Range 1-10). Range allowed (Ex., 7.1-10.0)",
+					Destination: &cvssv3BaseScore,
+				},
+				cli.StringFlag{
+					Name:  "cvssv3_temporal_score",
+					Usage: "CVSS v3 Temporal Score (Range 1-10). Range allowed (Ex., 7.1-10.0)",
+					Destination: &cvssv3TemporalScore,
+				},
+				cli.StringSliceFlag{
+					Name:  "product_title",
+					Usage: "Name of product.",
+				},
+				cli.StringSliceFlag{
+					Name:  "update_uid",
+					Usage: "Update Uid.",
+				},
+				cli.StringSliceFlag{
+					Name:  "update_title",
+					Usage: "Update Title.",
+				},
+				cli.StringSliceFlag{
+					Name:  "kb",
+					Usage: "Update KB.",
+				},
+				cli.StringSliceFlag{
+					Name:  "product_family_title",
+					Usage: "Product Family Title.",
+				},
+				cli.StringSliceFlag{
+					Name:  "classification_title",
+					Usage: "Classification Title.",
+				},
+				cli.StringSliceFlag{
+					Name:  "msrc_severity",
+					Usage: "MSRC Severity.",
+				},
+				cli.StringSliceFlag{
+					Name:  "arch",
+					Usage: "Architecture.",
+				},
+				cli.StringFlag{
+					Name:        "is_superseded",
+					Usage:       "Is Superseded.",
+					Destination: &isSuperseded,
+				},
+				cli.StringFlag{
+					Name:        "is_in_file",
+					Usage:       "Is in file (is in the current wsusscn2.cab file).",
+					Destination: &isInFile,
+				},
+				cli.IntFlag{
+					Name:        "limit",
+					Usage:       "Number of records per page.",
+					Value:       defaultLimit,
+					Destination: &limit,
+				},
+				cli.IntFlag{
+					Name:        "offset",
+					Usage:       "Number of records to skip.",
+					Value:       defaultOffset,
+					Destination: &offset,
+				},
+				cli.IntFlag{
+					Name:        "record_limit",
+					Usage:       "Max number of records to return.",
+					Value:       defaultRecordLimit,
+					Destination: &recordLimit,
+				},
+			},
+			Action: func(c *cli.Context) error {
+				if quiet {
+					log.SetOutput(logFile)
+				} else {
+					mw := io.MultiWriter(os.Stdout, logFile)
+					log.SetOutput(mw)
+				}
+
+				log.Println("List cve called")
+
+				//Authentication setup
+				if apiKey == "" && config.ApiKey == "" {
+					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey --api_key 1234")
+				}
+
+				if apiKey == "" {
+					apiKey = config.ApiKey
+				}
+
+				cve = c.StringSlice("cve")
+				productTitle = c.StringSlice("product_title")
+				updateUid = c.StringSlice("update_uid")
+				updateTitle = c.StringSlice("update_title")
+				updateKb = c.StringSlice("kb")
+				productFamilyTitle = c.StringSlice("product_family_title")
+				classificationTitle = c.StringSlice("classification_title")
+				msrcSeverity = c.StringSlice("msrc_severity")
+				arch = c.StringSlice("arch")
+
+				recordCnt := 0
+				done := false
+
+				if limit <= 0 {
+					limit = defaultLimit
+				}
+
+				if offset <= 0 {
+					offset = defaultOffset
+				}
+
+				if recordLimit <= 0 {
+					recordLimit = defaultRecordLimit
+				}
+
+				if recordLimit < limit {
+					limit = recordLimit
+				}
+
+				fmt.Println(`"Cve","CveTitle","Cvssv3BaseScore","Cvssv3TemporalScore","Cvssv3Vector","UpdateUid","UpdateTitle","Kb","ProductTitle","ProductFamilyTitle","ClassificationTitle","MsrcSeverity","Arch","IsInFile","IsSuperseded","LatestSupersessionUid"`)
+
+				for recordCnt < recordLimit && !done {
+					var cves []Cve
+
+					req := createNewHttpReq(apiUrl+"/cve", apiKey)
+
+					q := req.URL.Query()
+					q.Add("limit", strconv.Itoa(limit))
+					q.Add("offset", strconv.Itoa(offset))
+
+					if len(productTitle) > 0 {
+						for _, p := range productTitle {
+							q.Add("product_title", p)
+						}
+					}
+					if len(updateUid) > 0 {
+						for _, p := range updateUid {
+							q.Add("uid", p)
+						}
+					}
+					if len(updateTitle) > 0 {
+						for _, p := range updateTitle {
+							q.Add("title", p)
+						}
+					}
+					if len(updateKb) > 0 {
+						for _, p := range updateKb {
+							q.Add("kb", p)
+						}
+					}
+					if len(productFamilyTitle) > 0 {
+						for _, p := range productFamilyTitle {
+							q.Add("product_family_title", p)
+						}
+					}
+					if len(classificationTitle) > 0 {
+						for _, p := range classificationTitle {
+							q.Add("classification_title", p)
+						}
+					}
+					if len(msrcSeverity) > 0 {
+						for _, p := range msrcSeverity {
+							q.Add("msrc_severity", p)
+						}
+					}
+					if len(arch) > 0 {
+						for _, p := range arch {
+							q.Add("arch", p)
+						}
+					}
+
+					if isInFile != "" {
+						q.Add("is_in_file", isInFile)
+					}
+					if isSuperseded != "" {
+						q.Add("is_superseded", isSuperseded)
+					}
+					if cvssv3BaseScore != "" {
+						q.Add("cvssv3_base_score", cvssv3BaseScore)
+					}
+					if cvssv3TemporalScore != "" {
+						q.Add("cvssv3_temporal_score", cvssv3TemporalScore)
+					}
+
+					req.URL.RawQuery = q.Encode()
+
+					err := getJson(api, req, debug, insecure, &cves)
+					check(err)
+
+					curRecordCnt := len(cves)
+
+					for _, v := range cves {
+						fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", v.Cve, v.CveTitle, v.Cvssv3BaseScore, v.Cvssv3TemporalScore, v.Cvssv3Vector, v.UpdateUid, v.UpdateTitle, v.Kb, v.ProductTitle, v.ProductFamilyTitle, v.ClassificationTitle, v.MsrcSeverity, v.Arch, v.IsInFile, v.IsSuperseded, v.LatestSupersessionUid)
+					}
+
+					recordCnt += curRecordCnt
+					offset += curRecordCnt
+
+					if curRecordCnt == 0 {
+						if debug {
+							log.Println("No more records returned")
+						}
+						done = true
+					}
+					if curRecordCnt < limit {
+						if debug {
+							log.Println("Last page of records reached")
+						}
+						done = true
+					}
+				}
 				return nil
 			},
 		},
@@ -483,6 +770,11 @@ func main() {
 					Name:        "debug, d",
 					Usage:       "Output debug level logging",
 					Destination: &debug,
+				},
+				cli.BoolFlag{
+					Name:        "insecure, k",
+					Usage:       "Do not verify server's SSL cert",
+					Destination: &insecure,
 				},
 				cli.BoolFlag{
 					Name:        "quiet, q",
@@ -601,7 +893,7 @@ func main() {
 
 				//Authentication setup
 				if apiKey == "" && config.ApiKey == "" {
-					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey ASDF")
+					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey --api_key 1234")
 				}
 
 				if apiKey == "" {
@@ -749,7 +1041,7 @@ func main() {
 
 					req.URL.RawQuery = q.Encode()
 
-					err := getJson(api, req, debug, &update)
+					err := getJson(api, req, debug, insecure, &update)
 					check(err)
 
 					curRecordCnt := len(update)
@@ -875,6 +1167,11 @@ func main() {
 					Destination: &debug,
 				},
 				cli.BoolFlag{
+					Name:        "insecure, k",
+					Usage:       "Do not verify server's SSL cert",
+					Destination: &insecure,
+				},
+				cli.BoolFlag{
 					Name:        "quiet, q",
 					Usage:       "Do not log to screen",
 					Destination: &quiet,
@@ -977,7 +1274,7 @@ func main() {
 
 				//Authentication setup
 				if apiKey == "" && config.ApiKey == "" {
-					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey ASDF")
+					log.Fatalf("Unable to find api key. use api_key or set one using wsusscn2cli setapikey --api_key 1234")
 				}
 
 				if apiKey == "" {
@@ -1113,7 +1410,7 @@ func main() {
 
 					req.URL.RawQuery = q.Encode()
 
-					err := getJson(api, req, debug, &update)
+					err := getJson(api, req, debug, insecure, &update)
 					check(err)
 
 					curRecordCnt := len(update)

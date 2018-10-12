@@ -22,21 +22,22 @@
 
 | Windows Release                                                                                                    | MD5                              | SHA1                                     |
 |--------------------------------------------------------------------------------------------------------------------|----------------------------------|------------------------------------------|
-| [wsusscn2cli v0.2.0](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.2.0/wsusscn2cli-v0.2.0.zip) | d3e274cbf8c0023aa83e436ce10b7e03 | 07328e38374b6f39031b848b120b4ff7e7653bdd |
+| [wsusscn2cli v0.3.0](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.3.0/wsusscn2cli-v0.3.0.zip) |  |  |
 
-* On Windows, run `certutil -hashfile wsusscn2cli-v0.2.0.zip MD5` OR `certutil -hashfile wsusscn2cli-v0.2.0.zip SHA1` to calculate hash of file
+* On Windows, run `certutil -hashfile wsusscn2cli-v0.3.0.zip MD5` OR `certutil -hashfile wsusscn2cli-v0.3.0.zip SHA1` to calculate hash of file
 
 | Linux Release                                                                                                         | MD5                              | SHA1                                     |
 |-----------------------------------------------------------------------------------------------------------------------|----------------------------------|------------------------------------------|
-| [wsusscn2cli v0.2.0](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.2.0/wsusscn2cli-v0.2.0.tar.gz) | 94875442ba7cb1565ef362f7f041a93f | c0da87408d26ea55fe0fbb5fbb4b8db58fa6e470 |
+| [wsusscn2cli v0.3.0](https://github.com/hashauthority/wsusscn2cli/releases/download/v0.3.0/wsusscn2cli-v0.3.0.tar.gz) |  |  |
 
-* On Linux, run `md5 wsusscn2cli-v0.2.0.tar.gz`, `md5sum wsusscn2cli-v0.2.0.tar.gz`, or `sha1sum wsusscn2cli-v0.2.0.tar.gz` to calculate hash of file
+* On Linux, run `md5 wsusscn2cli-v0.3.0.tar.gz`, `md5sum wsusscn2cli-v0.3.0.tar.gz`, or `sha1sum wsusscn2cli-v0.3.0.tar.gz` to calculate hash of file
 
 ## Getting Started
 
 1. Set API key (Visit https://wsusscn2.cab to create an account and generate an API key).
 2. Run `wsusscn2cli setapikey --api_key YOURAPIKEY` to write the API key to wsusscn2cli.json
 3. Run `wsusscn2cli listupdates --record_limit 50` and confirm output
+4. Run any command with "-q" argument to stop log messages from printing to the screen
 
 ## Syntax and examples
 
@@ -60,12 +61,16 @@ COMMANDS:
      listproduct         List all products
      listproductfamily   List all product families
      listupdate          List updates
+     listsupersede       List supersession updates
      setapikey           Set API key for repeated usage
      help, h             Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
    --help, -h     show help
    --version, -v  print the version
+
+COPYRIGHT:
+   (c) 2018 Hash Authority, LLC
 ```
 
 ### **```wsusscn2cli listupdate```**
@@ -79,8 +84,10 @@ USAGE:
    wsusscn2cli listupdate [command options] [arguments...]
 
 OPTIONS:
-   --debug, -d                          Output debug level logging
    --api_key value, -a value            API key (required if not using config file)
+   --debug, -d                          Output debug level logging
+   --insecure, -k                       Do not verify server's SSL cert
+   --quiet, -q                          Do not log to screen
    --count_only                         Only print number of records
    --product_title value                Name of product.
    --update_uid value                   Update Uid.
@@ -90,6 +97,7 @@ OPTIONS:
    --product_family_title value         Product Family Title.
    --classification_title value         Classification Title.
    --msrc_severity value                MSRC Severity.
+   --arch value                         Architecture.
    --is_superseded value                Is Superseded.
    --is_bundled value                   Is Bundled.
    --is_public value                    Is Public.
@@ -103,7 +111,7 @@ OPTIONS:
    --record_limit value                 Max number of records to return. (default: 20000)
 ```
 
-Definition: List updates. Multiple values can be passed by repeating the argument. Multiple arguments are ANDed together. Use --columns to reduce the fields in output.
+Definition: List updates. Multiple values can be passed by repeating the argument. Multiple arguments for the same filter are ORed together. Filters are ANDed together. Use --columns to reduce the fields in output.
 
 * "update_uid": Unique identifier for an update. Combine this with product_title to get a single row of data.
 * "kb": KB number
@@ -170,6 +178,99 @@ Example of counting important updates for "Windows 7"
 ```
 > wsusscn2cli listupdate --product_title "Windows 7" --count_only --msrc_severity "Important"
 Number of records: 466
+```
+
+### **```wsusscn2cli listsupersede```**
+
+```
+> wsusscn2cli.exe listsupersede -h
+NAME:
+   wsusscn2cli.exe listsupersede - List supersession updates
+
+USAGE:
+   wsusscn2cli.exe listsupersede [command options] [arguments...]
+
+OPTIONS:
+   --api_key value, -a value            API key (required if not using config file)
+   --debug, -d                          Output debug level logging
+   --quiet, -q                          Do not log to screen
+   --product_title value                Name of product.
+   --update_uid value                   Update Uid.
+   --update_title value                 Update Title.
+   --kb value                           Update KB.
+   --update_type value                  Update Type.
+   --product_family_title value         Product Family Title.
+   --classification_title value         Classification Title.
+   --msrc_severity value                MSRC Severity.
+   --is_superseded value                Is Superseded.
+   --is_bundled value                   Is Bundled.
+   --is_public value                    Is Public.
+   --is_beta value                      Is Beta.
+   --update_creation_date_after value   Updates created after this date [YYYY-MM-DD] (exclusive).
+   --update_creation_date_before value  Updates created before this date [YYYY-MM-DD] (exclusive).
+   --update_creation_date_on value      Updates created on this date [YYYY-MM-DD].
+   --limit value                        Number of records per page. (default: 1000)
+   --offset value                       Number of records to skip. (default: 0)
+   --record_limit value                 Max number of records to return. (default: 20000)
+```
+
+Definition: List superseded updates. The listed update is the *latest* update in the supersession chain. That is, if A is superseded by B and B is superseded by C, then this command will show that A is superseded by C.
+
+* "update_uid": Unique identifier for an update. Combine this with product_title to get a single row of data.
+* "kb": KB number
+* "update_title": Update Title
+* "update_type": Update Type
+* "product_family_title": Product Family Title
+* "classification_title": Classification Title
+* "product_title": OS or Application name
+* "msrc_severity": Severity rating of patch by Microsoft
+* "is_superseded": Indicates if this is superseded by another update. Values allowed can be 0/1, t/f, true/false, True/False
+* "is_public": Indicates if this update is released to the public. Values allowed can be 0/1, t/f, true/false, True/False
+* "is_beta": Indicates if this update is in beta. Values allowed can be 0/1, t/f, true/false, True/False
+* "is_bundled": Indicates if this update is included in another update.
+
+Example of superseded by kb:
+```
+> wsusscn2cli listsupersede --kb 4025339
+"UpdateUid","UpdateTitle","UpdateCreationDate","ProductTitle","IsSuperseded","SuperUpdateUid","SuperTitle","SuperCreationDate","SuperProductTitle","SuperIsSuperseded"
+"84C1A786-79D4-4D94-9A75-FC900083816F","2017-07 Cumulative Update for Windows 10 Version 1607 for x86-based Systems (KB4025339)","2017-07-11T17:00:03Z","Windows 10","true","073AA939-731E-464C-B64E-F6241C4D9A86","2018-06 Cumulative Update for Windows 10 Version 1607 for x86-based Systems (KB4284880)","2018-06-12T17:00:05Z","Windows 10","false"
+"84C1A786-79D4-4D94-9A75-FC900083816F","2017-07 Cumulative Update for Windows 10 Version 1607 for x86-based Systems (KB4025339)","2017-07-11T17:00:03Z","Windows 10","true","073AA939-731E-464C-B64E-F6241C4D9A86","2018-06 Cumulative Update for Windows 10 Version 1607 for x86-based Systems (KB4284880)","2018-06-12T17:00:05Z","Windows 10 LTSB","false"
+"A44D500F-FC5D-4FE4-90CB-991568E9CB58","2017-07 Cumulative Update for Windows 10 Version 1607 for x64-based Systems (KB4025339)","2017-07-11T17:00:03Z","Windows 10","true","3105F320-7D78-4034-A86C-03B4F9352480","2018-06 Cumulative Update for Windows 10 Version 1607 for x64-based Systems (KB4284880)","2018-06-12T17:00:05Z","Windows 10","false"
+"A44D500F-FC5D-4FE4-90CB-991568E9CB58","2017-07 Cumulative Update for Windows 10 Version 1607 for x64-based Systems (KB4025339)","2017-07-11T17:00:03Z","Windows 10","true","3105F320-7D78-4034-A86C-03B4F9352480","2018-06 Cumulative Update for Windows 10 Version 1607 for x64-based Systems (KB4284880)","2018-06-12T17:00:05Z","Windows 10 LTSB","false"
+"D6677D54-CE7A-4774-A696-84DE34EFF033","2017-07 Cumulative Update for Windows Server 2016 for x64-based Systems (KB4025339)","2017-07-11T17:00:03Z","Windows Server 2016","true","FA8B8608-4925-4C9B-871F-A3E5D0B082FA","2018-06 Cumulative Update for Windows Server 2016 for x64-based Systems (KB4284880)","2018-06-12T17:00:05Z","Windows Server 2016","false"
+```
+
+### **```wsusscn2cli listcve```**
+
+```
+> wsusscn2cli.exe listcve -h
+NAME:
+   wsusscn2cli.exe listcve - List all CVEs
+
+USAGE:
+   wsusscn2cli.exe listcve [command options] [arguments...]
+
+OPTIONS:
+   --api_key value, -a value      API key (required if not using config file)
+   --debug, -d                    Output debug level logging
+   -k, --insecure                 Do not verify server's SSL cert
+   --quiet, -q                    Do not log to screen
+   --cve value                    CVE number (Ex., CVE-2018-0001).
+   --cvssv3_base_score value      CVSS v3 Base Score (Range 1-10). Range allowed (Ex., 7.1-10.0)
+   --cvssv3_temporal_score value  CVSS v3 Temporal Score (Range 1-10). Range allowed (Ex., 7.1-10.0)
+   --product_title value          Name of product.
+   --update_uid value             Update Uid.
+   --update_title value           Update Title.
+   --kb value                     Update KB.
+   --product_family_title value   Product Family Title.
+   --classification_title value   Classification Title.
+   --msrc_severity value          MSRC Severity.
+   --arch value                   Architecture.
+   --is_superseded value          Is Superseded.
+   --is_in_file value             Is in file (is in the current wsusscn2.cab file).
+   --limit value                  Number of records per page. (default: 1000)
+   --offset value                 Number of records to skip. (default: 0)
+   --record_limit value           Max number of records to return. (default: 20000)
 ```
 
 ### **```wsusscn2cli listclassification```**
@@ -242,6 +343,7 @@ USAGE:
 OPTIONS:
    --debug, -d                Output debug level logging
    --api_key value, -a value  API key (required if not using config file)
+   --quiet, -q                Do not log to screen
 ```
 
 Definition: Display list of product families
@@ -287,12 +389,13 @@ Example:
 * **0.1.2** (2018-04-12) - Internal release only.
 * **0.1.3** (2018-04-25) - Internal release only.
 * **0.1.4** (2018-06-11) - Initial public release. Release of wsusscn2cli binary with listupdate, listclassification, listproduct, and listproductfamily commands
-* **0.1.5** (unreleased) - Internal release only. Fixed bug when using --update_creation_date_after option
+* **0.1.5** (unreleased) - Added listsupersede command, fixed bug with update_creation_date_on argument, and added quiet argument to stop logging to the screen
 * **0.2.0** (2018-09-30) - Updated endpoint to api.wsusscn2.cab. Note that all previous versions will no longer work since the root domain is now a web page.
+* **0.3.0** (2018-10-12) - Added listcve command. Added --insecure switch to ignore server ssl cert verification (should not be required for most environments).
 
 ## License
 
-wsusscn2cli is licensed under the [MIT](http://www.opensource.org/licenses/mit-license.php). However, in order for this tool to work, you must have an existing license to the wsusscn2.cab API and a valid API token from [https://wsusscn2.cab](https://wsusscn2.cab)
+wsusscn2cli is licensed under the [MIT](http://www.opensource.org/licenses/mit-license.php). However, in order for this tool to work, you must have an existing license to the wsusscn2.cab API and a valid API key from [https://wsusscn2.cab](https://wsusscn2.cab)
 
 ## Other libraries used by wsusscn2cli
 
